@@ -15,7 +15,7 @@ limitations under the License.
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace RosSharp
+namespace Unity.Robotics.UrdfImporter
 {
     public class Matrix3x3
     {
@@ -348,6 +348,11 @@ namespace RosSharp
         private bool IsTwoEigenvaluesEqual(float[] eigenvalues)
         {
             return (eigenvalues[0] == eigenvalues[1] || eigenvalues[1] == eigenvalues[2] || eigenvalues[0] == eigenvalues[2]);
+        }
+
+        public override string ToString()
+        {
+            return $"[[{elements[0][0]} {elements[0][1]} {elements[0][2]}]\n[{elements[1][0]} {elements[1][1]} {elements[1][2]}]\n[{elements[2][0]} {elements[2][1]} {elements[2][2]}]";
         }
 
     }

@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -9,13 +10,13 @@ using UnityEditor;
 /// This is to reduce the usage of #if UNITY_EDITOR in the code and have a consistent way of skipping editor only code. 
 /// Also to allow having the option of running the runtime mode code in editor.
 /// </summary>
-public static class RuntimeURDF
+public static class RuntimeUrdf
 {
 #if UNITY_EDITOR
     public static bool runtimeModeEnabled = false;
 #else
     public static bool runtimeModeEnabled = true;
-#endif
+#endif    
     public static bool IsRuntimeMode() 
     {
         return runtimeModeEnabled;
@@ -108,7 +109,15 @@ public static class RuntimeURDF
 #if UNITY_EDITOR
         if (!IsRuntimeMode())
         {
-            return AssetDatabase.CreateFolder(parentFolder, newFolderName);
+            if (!AssetDatabase.IsValidFolder($"{parentFolder}/{newFolderName}"))
+            {
+                return AssetDatabase.CreateFolder(parentFolder, newFolderName);
+            }
+            else 
+            {
+                Debug.LogWarning($"{parentFolder}/{newFolderName} cannot be created! It may already exist.");
+                return AssetDatabase.GUIDFromAssetPath($"{parentFolder}/{newFolderName}").ToString();
+            }
         }
 #endif
     return "";
@@ -191,11 +200,15 @@ public static class RuntimeURDF
         return default(T);
     }
 
-    public static void AssetDatabase_CreateAsset(UnityEngine.Object asset, string path) 
+    public static void AssetDatabase_CreateAsset(UnityEngine.Object asset, string path, bool uniquePath = false) 
     {
 #if UNITY_EDITOR
         if (!IsRuntimeMode())
         {
+            if (uniquePath)
+            {
+                path = AssetDatabase.GenerateUniqueAssetPath(path);
+            }
             AssetDatabase.CreateAsset(asset, path);
         }
 #endif     
@@ -221,4 +234,21 @@ public static class RuntimeURDF
         }
 #endif
     }
+    
+    public static bool AssetExists(string assetPath, bool ignoreCase = false)
+    {
+#if UNITY_EDITOR
+        string[] foldersToSearch = {Path.GetDirectoryName(assetPath)};
+        var assetName = Path.GetFileNameWithoutExtension(assetPath);
+        foreach (var guid2 in AssetDatabase_FindAssets(assetName, foldersToSearch))
+        {
+            var possiblePath = RuntimeUrdf.AssetDatabase_GUIDToAssetPath(guid2);
+            if (string.Equals(possiblePath, assetPath, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+#endif
+        return false;
+    }    
 }

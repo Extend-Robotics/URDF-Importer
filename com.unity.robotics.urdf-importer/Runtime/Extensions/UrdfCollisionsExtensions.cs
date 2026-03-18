@@ -16,11 +16,11 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-namespace RosSharp.Urdf
+namespace Unity.Robotics.UrdfImporter
 { 
     public static class UrdfCollisionsExtensions
     {
-        public static void Create(Transform parent, List<Link.Collision> collisions = null)
+        public static UrdfCollisions Create(Transform parent, List<Link.Collision> collisions = null)
         {
             GameObject collisionsObject = new GameObject("Collisions");
             collisionsObject.transform.SetParentAndAlign(parent);
@@ -28,7 +28,10 @@ namespace RosSharp.Urdf
 
             collisionsObject.hideFlags = HideFlags.NotEditable;
             urdfCollisions.hideFlags = HideFlags.None;
-            
+            if (UrdfRobotExtensions.importsettings?.skipCollisionMeshes == true)
+            {
+                 collisions = null;
+            }
             if (collisions != null)
             {
                 foreach (Link.Collision collision in collisions)
@@ -36,6 +39,7 @@ namespace RosSharp.Urdf
                     UrdfCollisionExtensions.Create(urdfCollisions.transform, collision);
                 }
             }
+            return urdfCollisions;
         }
         
         public static List<Link.Collision> ExportCollisionsData(this UrdfCollisions urdfCollisions)

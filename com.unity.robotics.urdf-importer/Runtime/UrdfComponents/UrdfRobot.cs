@@ -16,14 +16,14 @@ using UnityEngine;
 using System;
 using System.Collections.Generic;
 
-namespace RosSharp.Urdf
+namespace Unity.Robotics.UrdfImporter
 {
     public enum GeometryTypes { Box, Cylinder, Sphere, Mesh }
 
     public class UrdfRobot : MonoBehaviour
     {
         public string FilePath;
-        public ImportSettings.axisType choosenAxis ;
+        public ImportSettings.axisType chosenAxis ;
         [SerializeField]
         private ImportSettings.axisType currentOrientation = ImportSettings.axisType.yAxis;
         public List<CollisionIgnore> collisionExceptions;
@@ -76,24 +76,24 @@ namespace RosSharp.Urdf
 
         public bool CheckOrientation()
         {
-            return currentOrientation == choosenAxis;
+            return currentOrientation == chosenAxis;
         }
 
         public void SetOrientation()
         {
-            currentOrientation = choosenAxis;
+            currentOrientation = chosenAxis;
         }
 
         public void AddController()
         {
-            if (!addController && this.gameObject.GetComponent< RosSharp.Control.Controller>() == null)
+            if (!addController && this.gameObject.GetComponent< Unity.Robotics.UrdfImporter.Control.Controller>() == null)
             {
-                this.gameObject.AddComponent<RosSharp.Control.Controller>();
+                this.gameObject.AddComponent<Unity.Robotics.UrdfImporter.Control.Controller>();
             }
             else
             {
-                DestroyImmediate(this.gameObject.GetComponent<RosSharp.Control.Controller>());
-                DestroyImmediate(this.gameObject.GetComponent<RosSharp.Control.FKRobot>());
+                DestroyImmediate(this.gameObject.GetComponent<Unity.Robotics.UrdfImporter.Control.Controller>());
+                DestroyImmediate(this.gameObject.GetComponent<Unity.Robotics.UrdfImporter.Control.FKRobot>());
                 JointControl[] scriptList = GetComponentsInChildren<JointControl>();
                 foreach (JointControl script in scriptList)
                     DestroyImmediate(script);
@@ -103,20 +103,20 @@ namespace RosSharp.Urdf
 
         public void AddFkRobot()
         {
-            if (!addFkRobot && this.gameObject.GetComponent<RosSharp.Control.FKRobot>() == null)
+            if (!addFkRobot && this.gameObject.GetComponent<Unity.Robotics.UrdfImporter.Control.FKRobot>() == null)
             {
-                this.gameObject.AddComponent<RosSharp.Control.FKRobot>();
+                this.gameObject.AddComponent<Unity.Robotics.UrdfImporter.Control.FKRobot>();
             }
             else
             {
-                DestroyImmediate(this.gameObject.GetComponent<RosSharp.Control.FKRobot>());
+                DestroyImmediate(this.gameObject.GetComponent<Unity.Robotics.UrdfImporter.Control.FKRobot>());
             }
             addFkRobot = !addFkRobot;
         }
 
         public void SetAxis(ImportSettings.axisType setAxis)
         {
-            this.choosenAxis = setAxis;
+            this.chosenAxis = setAxis;
         }
 
         void Start()

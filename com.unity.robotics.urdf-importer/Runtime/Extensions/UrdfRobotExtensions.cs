@@ -14,18 +14,20 @@ limitations under the License.
 
 using System.Collections.Generic;
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using Unity.Robotics.UrdfImporter.Control;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 
-namespace RosSharp.Urdf
+namespace Unity.Robotics.UrdfImporter
 {
     public static class UrdfRobotExtensions
     {
-        static string tagName = "robot";
         static string collisionObjectName = "Collisions";
         public static ImportSettings importsettings;
 
@@ -34,9 +36,9 @@ namespace RosSharp.Urdf
             CreateTag();
             GameObject robotGameObject = new GameObject("Robot");
 
-            robotGameObject.tag = tagName;
+            SetTag(robotGameObject);
             robotGameObject.AddComponent<UrdfRobot>();
-            robotGameObject.AddComponent<RosSharp.Control.Controller>();
+            robotGameObject.AddComponent<Unity.Robotics.UrdfImporter.Control.Controller>();
 
             UrdfPlugins.Create(robotGameObject.transform);
 
@@ -68,22 +70,23 @@ namespace RosSharp.Urdf
             ImportPipelineData im = new ImportPipelineData();
             im.settings = settings;
             im.loadStatus = loadStatus;
-            im.wasRuntimeMode = RuntimeURDF.IsRuntimeMode();
+            im.wasRuntimeMode = RuntimeUrdf.IsRuntimeMode();
             im.forceRuntimeMode = forceRuntimeMode;
 
-            if (forceRuntimeMode) 
+            if (forceRuntimeMode)
             {
-                RuntimeURDF.SetRuntimeMode(true);
+                RuntimeUrdf.SetRuntimeMode(true);
             }
 
             im.robot = new Robot(filename);
 
             if (!UrdfAssetPathHandler.IsValidAssetPath(im.robot.filename))
             {
-                Debug.LogError("URDF file and ressources must be placed in Assets Folder:\n" + Application.dataPath);
-                if (forceRuntimeMode) 
+                Debug.LogError("URDF file and resources must be placed in project folder:" +
+                    $"\n{Application.dataPath.Substring(0, Application.dataPath.Length - "Assets".Length)}");
+                if (forceRuntimeMode)
                 { // set runtime mode back to what it was
-                    RuntimeURDF.SetRuntimeMode(im.wasRuntimeMode);
+                    RuntimeUrdf.SetRuntimeMode(im.wasRuntimeMode);
                 }
                 return null;
             }
@@ -91,24 +94,25 @@ namespace RosSharp.Urdf
         }
 
         // Creates the robot game object.
-        private static void ImportPipelineCreateObject(ImportPipelineData im) 
+        private static void ImportPipelineCreateObject(ImportPipelineData im)
         {
             im.robotGameObject = new GameObject(im.robot.name);
-           
+
             importsettings = im.settings;
             im.settings.totalLinks = im.robot.links.Count;
+
             CreateTag();
-            im.robotGameObject.tag = tagName;
+            SetTag(im.robotGameObject);
 
             im.robotGameObject.AddComponent<UrdfRobot>();
 
-            im.robotGameObject.AddComponent<RosSharp.Control.Controller>();
-            if (RuntimeURDF.IsRuntimeMode()) 
+            im.robotGameObject.AddComponent<Unity.Robotics.UrdfImporter.Control.Controller>();
+            if (RuntimeUrdf.IsRuntimeMode())
             {// In runtime mode, we have to disable controller while robot is being constructed.
-                im.robotGameObject.GetComponent<RosSharp.Control.Controller>().enabled = false;
+                im.robotGameObject.GetComponent<Unity.Robotics.UrdfImporter.Control.Controller>().enabled = false;
             }
 
-            im.robotGameObject.GetComponent<UrdfRobot>().SetAxis(im.settings.choosenAxis);
+            im.robotGameObject.GetComponent<UrdfRobot>().SetAxis(im.settings.chosenAxis);
 
             UrdfAssetPathHandler.SetPackageRoot(Path.GetDirectoryName(im.robot.filename));
             UrdfMaterial.InitializeRobotMaterials(im.robot);
@@ -118,12 +122,12 @@ namespace RosSharp.Urdf
         // Creates the stack of robot joints. Should be called iteratively until false is returned.
         private static bool ProcessJointStack(ImportPipelineData im)
         {
-            if (im.importStack == null) 
+            if (im.importStack == null)
             {
                 im.importStack = new Stack<Tuple<Link, Transform, Joint>>();
                 im.importStack.Push(new Tuple<Link, Transform, Joint>(im.robot.root, im.robotGameObject.transform, null));
             }
-            
+
             if (im.importStack.Count != 0)
             {
                 Tuple<Link, Transform, Joint> currentLink = im.importStack.Pop();
@@ -151,9 +155,9 @@ namespace RosSharp.Urdf
             CorrectAxis(im.robotGameObject);
             CreateCollisionExceptions(im.robot, im.robotGameObject);
 
-            if (im.forceRuntimeMode) 
+            if (im.forceRuntimeMode)
             { // set runtime mode back to what it was
-                RuntimeURDF.SetRuntimeMode(im.wasRuntimeMode);
+                RuntimeUrdf.SetRuntimeMode(im.wasRuntimeMode);
             }
         }
 
@@ -163,8 +167,8 @@ namespace RosSharp.Urdf
         /// <param name="filename">URDF filename</param>
         /// <param name="settings">Import Settings</param>
         /// <param name="loadStatus">If true, will show the progress of import step by step</param>
-        /// <param name="forceRuntimeMode"> 
-        /// When true, runs the runtime loading mode even in Editor. When false, uses the default behavior, 
+        /// <param name="forceRuntimeMode">
+        /// When true, runs the runtime loading mode even in Editor. When false, uses the default behavior,
         /// i.e. runtime will be enabled in standalone build and disable when running in editor.
         /// In runtime mode, the Controller component of the robot will be added but not activated automatically and has to be enabled manually.
         /// This is to allow initializing the controller values (stiffness, damping, etc.) before the controller.Start() is called
@@ -172,6 +176,7 @@ namespace RosSharp.Urdf
         /// <returns></returns>
         public static IEnumerator<GameObject> Create(string filename, ImportSettings settings, bool loadStatus = false, bool forceRuntimeMode = false)
         {
+            UrdfGeometryCollision.BeginNewUrdfImport();
             ImportPipelineData im = ImportPipelineInit(filename, settings, loadStatus, forceRuntimeMode);
             if (im == null)
             {
@@ -201,36 +206,72 @@ namespace RosSharp.Urdf
         /// <returns> Robot game object</returns>
         public static GameObject CreateRuntime(string filename, ImportSettings settings)
         {
+            Stopwatch sw = new Stopwatch();
+
+            StlAssetPostProcessor.ResetTimingStats();
+            UrdfGeometryCollision.ResetCollisionTimingStats();
+
+            sw.Restart();
             ImportPipelineData im = ImportPipelineInit(filename, settings, false, true);
+            sw.Stop();
+            Debug.Log($"[URDF Timing] ImportPipelineInit (URDF XML parse): {sw.ElapsedMilliseconds}ms");
+
             if (im == null)
             {
                 return null;
             }
 
+            sw.Restart();
             ImportPipelineCreateObject(im);
+            sw.Stop();
+            Debug.Log($"[URDF Timing] ImportPipelineCreateObject: {sw.ElapsedMilliseconds}ms");
 
+            sw.Restart();
+            int linkCount = 0;
             while (ProcessJointStack(im))
-            {// process the stack until finished.
+            {
+                linkCount++;
             }
+            sw.Stop();
+            Debug.Log($"[URDF Timing] ProcessJointStack ({linkCount} links): {sw.ElapsedMilliseconds}ms");
 
+            StlAssetPostProcessor.LogTimingStats();
+            UrdfGeometryCollision.LogCollisionTimingStats();
+
+            sw.Restart();
             ImportPipelinePostCreate(im);
+            sw.Stop();
+            Debug.Log($"[URDF Timing] ImportPipelinePostCreate: {sw.ElapsedMilliseconds}ms");
 
             return im.robotGameObject;
         }
 
         public static void CorrectAxis(GameObject robot)
         {
+            //Debug.Log("hit");
             UrdfRobot robotScript = robot.GetComponent<UrdfRobot>();
-            if (robotScript.CheckOrientation())
+            if (robotScript == null)
+            {
+                Debug.LogError("Robot has no UrdfRobot component attached. Abandon correcting axis");
                 return;
+            }
+
+            if (robotScript.CheckOrientation())
+            {
+                return;
+            }
             Quaternion correctYtoZ = Quaternion.Euler(-90, 0, 90);
             Quaternion correctZtoY = Quaternion.Inverse((correctYtoZ));
             Quaternion correction = new Quaternion();
 
-            if (robotScript.choosenAxis == ImportSettings.axisType.zAxis)
+            if (robotScript.chosenAxis == ImportSettings.axisType.zAxis)
+            {
                 correction = correctYtoZ;
+            }
             else
+            {
                 correction = correctZtoY;
+            }
 
             UrdfVisual[] visualMeshList = robot.GetComponentsInChildren<UrdfVisual>();
             UrdfCollision[] collisionMeshList = robot.GetComponentsInChildren<UrdfCollision>();
@@ -241,7 +282,10 @@ namespace RosSharp.Urdf
 
             foreach (UrdfCollision collision in collisionMeshList)
             {
-                collision.transform.localRotation = collision.transform.localRotation * correction;
+                if (collision.geometryType == GeometryTypes.Mesh)
+                {
+                    collision.transform.localRotation = collision.transform.localRotation * correction;
+                }
             }
             robotScript.SetOrientation();
         }
@@ -333,6 +377,13 @@ namespace RosSharp.Urdf
         public static void CreateTag()
         {
 #if UNITY_EDITOR
+            if (RuntimeUrdf.IsRuntimeMode())
+            {
+                // This is to make the behavior consistent with Runtime mode
+                // as tags cannot be created in a Standalone build.
+                return;
+            }
+
             // Open tag manager
             SerializedObject tagManager = new SerializedObject(AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/TagManager.asset")[0]);
             SerializedProperty tagsProp = tagManager.FindProperty("tags");
@@ -343,10 +394,10 @@ namespace RosSharp.Urdf
             for (int i = 0; i < tagsProp.arraySize; i++)
             {
                 SerializedProperty t = tagsProp.GetArrayElementAtIndex(i);
-                if (t.stringValue.Equals(tagName))
+                if (t.stringValue.Equals(FKRobot.k_TagName))
                 {
-                    found = true; 
-                    break; 
+                    found = true;
+                    break;
                 }
             }
 
@@ -355,11 +406,37 @@ namespace RosSharp.Urdf
             {
                 tagsProp.InsertArrayElementAtIndex(0);
                 SerializedProperty n = tagsProp.GetArrayElementAtIndex(0);
-                n.stringValue = tagName;
+                n.stringValue = FKRobot.k_TagName;
             }
 
             tagManager.ApplyModifiedProperties();
 #endif
+        }
+
+        static void SetTag(GameObject go)
+        {
+            try
+            {
+                GameObject.FindWithTag(FKRobot.k_TagName);
+            }
+            catch (Exception)
+            {
+                Debug.LogError($"Unable to find tag '{FKRobot.k_TagName}'." +
+                               $"Add a tag '{FKRobot.k_TagName}' in the Project Settings in Unity Editor.");
+                return;
+            }
+
+            if (!go)
+                return;
+
+            try
+            {
+                go.tag = FKRobot.k_TagName;
+            }
+            catch (Exception)
+            {
+                Debug.LogError($"Unable to set the GameObject '{go.name}' tag to '{FKRobot.k_TagName}'.");
+            }
         }
     }
 }

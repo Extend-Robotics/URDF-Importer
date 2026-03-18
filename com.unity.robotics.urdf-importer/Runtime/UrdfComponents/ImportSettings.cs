@@ -2,14 +2,14 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace RosSharp
+namespace Unity.Robotics.UrdfImporter
 {
     public class ImportSettings
     {
         public enum axisType
         {
-            zAxis,
             yAxis,
+            zAxis,
         }
 
         public enum convexDecomposer
@@ -18,8 +18,11 @@ namespace RosSharp
             vHACD,
         }
 
-        public axisType choosenAxis = axisType.yAxis;
+        public axisType chosenAxis = axisType.yAxis;
         public convexDecomposer convexMethod = convexDecomposer.vHACD;
+        public bool skipCollisionMeshes = false;
+
+        public bool OverwriteExistingPrefabs { get; set; } = false;
 
         public int linksLoaded = 0;
         public int totalLinks = 0;

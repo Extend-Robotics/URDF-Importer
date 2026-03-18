@@ -5,7 +5,7 @@ using Unity.EditorCoroutines.Editor;
 using UnityEditor;
 using UnityEngine;
 
-namespace RosSharp.Urdf.Editor
+namespace Unity.Robotics.UrdfImporter.Editor
 {
     public class FileImportMenu : EditorWindow
     {
@@ -38,8 +38,8 @@ namespace RosSharp.Urdf.Editor
             //Select the original up axis of the imported mesh
             GUILayout.Space(5);
             EditorGUILayout.BeginHorizontal();
-            settings.choosenAxis = (ImportSettings.axisType)EditorGUILayout.EnumPopup(
-                "Select Axis Type" , settings.choosenAxis);
+            settings.chosenAxis = (ImportSettings.axisType)EditorGUILayout.EnumPopup(
+                "Select Axis Type" , settings.chosenAxis);
             EditorGUILayout.EndHorizontal();
 
             //Window title
@@ -53,6 +53,9 @@ namespace RosSharp.Urdf.Editor
                 "Mesh Decomposer", settings.convexMethod);
             EditorGUILayout.EndHorizontal();
 
+            GUILayout.Space(10);
+            settings.OverwriteExistingPrefabs = GUILayout.Toggle(settings.OverwriteExistingPrefabs, "Overwrite Existing Prefabs");
+            
             //Import Robot button
             GUILayout.Space(10);
             if (GUILayout.Button("Import URDF"))

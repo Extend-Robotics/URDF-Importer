@@ -14,13 +14,39 @@ limitations under the License.
 
 using UnityEngine;
 using System.Collections.Generic;
+using System.Diagnostics;
 using MeshProcess;
 using System.IO;
+using Debug = UnityEngine.Debug;
 
-namespace RosSharp.Urdf
+namespace Unity.Robotics.UrdfImporter
 {
     public class UrdfGeometryCollision : UrdfGeometry
     {
+        public static List<string> UsedTemplateFiles => s_UsedTemplateFiles;
+        static List<string> s_UsedTemplateFiles = new List<string>();
+        static List<string> s_CreatedAssetNames = new List<string>();
+
+        // VHACD timing stats
+        private static int s_vhacdCount = 0;
+        private static long s_vhacdTotalMs = 0;
+        private static int s_collisionMeshCount = 0;
+        private static long s_collisionTotalMs = 0;
+
+        public static void ResetCollisionTimingStats()
+        {
+            s_vhacdCount = 0;
+            s_vhacdTotalMs = 0;
+            s_collisionMeshCount = 0;
+            s_collisionTotalMs = 0;
+        }
+
+        public static void LogCollisionTimingStats()
+        {
+            Debug.Log($"[URDF Timing] Collision meshes processed: {s_collisionMeshCount}, total collision time: {s_collisionTotalMs}ms");
+            Debug.Log($"[URDF Timing] VHACD decompositions: {s_vhacdCount}, total VHACD time: {s_vhacdTotalMs}ms");
+        }
+        
         public static void Create(Transform parent, GeometryTypes geometryType, Link.Geometry geometry = null)
         {
             GameObject geometryGameObject = null;
@@ -63,7 +89,7 @@ namespace RosSharp.Urdf
 
         private static GameObject CreateMeshCollider(Link.Geometry.Mesh mesh)
         {
-            if (!RuntimeURDF.IsRuntimeMode())
+            if (!RuntimeUrdf.IsRuntimeMode())
             {
                 GameObject prefabObject = LocateAssetHandler.FindUrdfAsset<GameObject>(mesh.filename);
                 if (prefabObject == null)
@@ -72,7 +98,7 @@ namespace RosSharp.Urdf
                     return null;
                 }
 
-                GameObject meshObject = (GameObject)RuntimeURDF.PrefabUtility_InstantiatePrefab(prefabObject);
+                GameObject meshObject = (GameObject)RuntimeUrdf.PrefabUtility_InstantiatePrefab(prefabObject);
                 ConvertMeshToColliders(meshObject, location:mesh.filename);
 
                 return meshObject;
@@ -103,14 +129,43 @@ namespace RosSharp.Urdf
         private static GameObject CreateCylinderCollider()
         {
             GameObject gameObject = new GameObject("Cylinder");
-            MeshCollider meshCollider = gameObject.AddComponent<MeshCollider>();
+            MeshFilter meshFilter = gameObject.AddComponent<MeshFilter>();
 
             Link.Geometry.Cylinder cylinder = new Link.Geometry.Cylinder(0.5, 2); //Default unity cylinder sizes
 
-            meshCollider.sharedMesh = CreateCylinderMesh(cylinder);
-            meshCollider.convex = true;
+            meshFilter.sharedMesh = CreateCylinderMesh(cylinder);
+            ConvertCylinderToCollider(meshFilter);
 
             return gameObject;
+        }
+
+        private static void ConvertCylinderToCollider(MeshFilter filter)
+        {
+            GameObject go = filter.gameObject;
+            var collider = filter.sharedMesh;
+            // Only create an asset if not runtime import
+            if (!RuntimeUrdf.IsRuntimeMode())
+            {
+                var packageRoot = UrdfAssetPathHandler.GetPackageRoot();
+                var filePath = RuntimeUrdf.AssetDatabase_GUIDToAssetPath(RuntimeUrdf.AssetDatabase_CreateFolder($"{packageRoot}", "meshes"));
+                var name =$"{filePath}/Cylinder.asset";
+                // Only create new asset if one doesn't exist
+                if (!RuntimeUrdf.AssetExists(name))
+                {
+                    Debug.Log($"Creating new cylinder file: {name}");
+                    RuntimeUrdf.AssetDatabase_CreateAsset(collider, name, uniquePath:true);
+                    RuntimeUrdf.AssetDatabase_SaveAssets();       
+                }
+                else
+                {
+                    collider = RuntimeUrdf.AssetDatabase_LoadAssetAtPath<Mesh>(name);
+                }
+            }
+            MeshCollider current = go.AddComponent<MeshCollider>();
+            current.sharedMesh = collider;
+            current.convex = true;
+            Object.DestroyImmediate(go.GetComponent<MeshRenderer>());
+            Object.DestroyImmediate(filter);
         }
 
         public static void CreateMatchingMeshCollision(Transform parent, Transform visualToCopy)
@@ -121,12 +176,12 @@ namespace RosSharp.Urdf
             }
 
             GameObject objectToCopy = visualToCopy.GetChild(0).gameObject;
-            GameObject prefabObject = (GameObject)RuntimeURDF.PrefabUtility_GetCorrespondingObjectFromSource(objectToCopy);
+            GameObject prefabObject = (GameObject)RuntimeUrdf.PrefabUtility_GetCorrespondingObjectFromSource(objectToCopy);
 
             GameObject collisionObject;
             if (prefabObject != null)
             {
-                collisionObject = (GameObject)RuntimeURDF.PrefabUtility_InstantiatePrefab(prefabObject);
+                collisionObject = (GameObject)RuntimeUrdf.PrefabUtility_InstantiatePrefab(prefabObject);
             }
             else
             {
@@ -141,6 +196,9 @@ namespace RosSharp.Urdf
 
         private static void ConvertMeshToColliders(GameObject gameObject, string location = null, bool setConvex = true)
         {
+            Stopwatch collisionSw = new Stopwatch();
+            collisionSw.Start();
+
             MeshFilter[] meshFilters = gameObject.GetComponentsInChildren<MeshFilter>();
             if (UrdfRobotExtensions.importsettings.convexMethod == ImportSettings.convexDecomposer.unity)
             {
@@ -161,7 +219,7 @@ namespace RosSharp.Urdf
                 string templateFileName = "";
                 string filePath = "";
                 int meshIndex = 0;
-                if (!RuntimeURDF.IsRuntimeMode() && location != null)
+                if (!RuntimeUrdf.IsRuntimeMode() && location != null)
                 {
                     string meshFilePath = UrdfAssetPathHandler.GetRelativeAssetPathFromUrdfPath(location, false);
                     templateFileName = Path.GetFileNameWithoutExtension(meshFilePath);
@@ -169,23 +227,41 @@ namespace RosSharp.Urdf
                 }
 
                 foreach (MeshFilter meshFilter in meshFilters)
-                {                   
+                {
                     GameObject child = meshFilter.gameObject;
                     VHACD decomposer = child.AddComponent<VHACD>();
+
+                    Stopwatch vhacdSw = new Stopwatch();
+                    vhacdSw.Start();
                     List<Mesh> colliderMeshes = decomposer.GenerateConvexMeshes(meshFilter.sharedMesh);
+                    vhacdSw.Stop();
+                    s_vhacdCount++;
+                    s_vhacdTotalMs += vhacdSw.ElapsedMilliseconds;
+                    Debug.Log($"[URDF Timing] VHACD #{s_vhacdCount}: {child.name} ({meshFilter.sharedMesh.vertexCount} verts) -> {colliderMeshes.Count} hulls in {vhacdSw.ElapsedMilliseconds}ms");
+
                     foreach (Mesh collider in colliderMeshes)
                     {
-                        if (!RuntimeURDF.IsRuntimeMode())
+                        var c = collider;
+                        if (!RuntimeUrdf.IsRuntimeMode())
                         {
-
                             meshIndex++;
-                            string name = filePath + "/" + templateFileName + "_" + meshIndex + ".asset";
-                            Debug.Log("Creating new mesh file:" + name);
-                            RuntimeURDF.AssetDatabase_CreateAsset(collider, name);
-                            RuntimeURDF.AssetDatabase_SaveAssets();
+                            string name = $"{filePath}/{templateFileName}_{meshIndex}.asset";
+                            // Only create new asset if one doesn't exist or should overwrite
+                            if ((UrdfRobotExtensions.importsettings.OverwriteExistingPrefabs || !RuntimeUrdf.AssetExists(name)) && !s_CreatedAssetNames.Contains(name))
+                            {
+                                Debug.Log($"Creating new mesh file: {name}");
+                                RuntimeUrdf.AssetDatabase_CreateAsset(c, name);
+                                RuntimeUrdf.AssetDatabase_SaveAssets();
+                                s_CreatedAssetNames.Add(name);
+                                s_UsedTemplateFiles.Add(templateFileName);
+                            }
+                            else
+                            {
+                                c = RuntimeUrdf.AssetDatabase_LoadAssetAtPath<Mesh>(name);
+                            }
                         }
                         MeshCollider current = child.AddComponent<MeshCollider>();
-                        current.sharedMesh = collider;
+                        current.sharedMesh = c;
                         current.convex = setConvex;
                     }
                     Component.DestroyImmediate(child.GetComponent<VHACD>());
@@ -193,6 +269,16 @@ namespace RosSharp.Urdf
                     Object.DestroyImmediate(meshFilter);
                 }
             }
+
+            collisionSw.Stop();
+            s_collisionMeshCount++;
+            s_collisionTotalMs += collisionSw.ElapsedMilliseconds;
+        }
+
+        public static void BeginNewUrdfImport()
+        {
+            s_CreatedAssetNames.Clear();
+            s_UsedTemplateFiles.Clear();
         }
 
     }

@@ -14,7 +14,7 @@ limitations under the License.
 
 using UnityEngine;
 
-namespace RosSharp.Urdf
+namespace Unity.Robotics.UrdfImporter
 {
     public static class UrdfLinkExtensions
     { 
@@ -23,8 +23,8 @@ namespace RosSharp.Urdf
             GameObject linkObject = new GameObject("link");
             linkObject.transform.SetParentAndAlign(parent);
             UrdfLink urdfLink = linkObject.AddComponent<UrdfLink>();
-            UrdfVisualsExtensions.Create(linkObject.transform, link?.visuals);
             UrdfCollisionsExtensions.Create(linkObject.transform, link?.collisions);
+            UrdfVisualsExtensions.Create(linkObject.transform, link?.visuals);
 
             if (link != null)
             {
