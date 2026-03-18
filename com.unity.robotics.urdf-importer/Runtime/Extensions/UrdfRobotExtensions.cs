@@ -14,6 +14,7 @@ limitations under the License.
 
 using System.Collections.Generic;
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using Unity.Robotics.UrdfImporter.Control;
@@ -21,6 +22,7 @@ using Unity.Robotics.UrdfImporter.Control;
 using UnityEditor;
 #endif
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 
 namespace Unity.Robotics.UrdfImporter
 {
@@ -204,19 +206,42 @@ namespace Unity.Robotics.UrdfImporter
         /// <returns> Robot game object</returns>
         public static GameObject CreateRuntime(string filename, ImportSettings settings)
         {
+            Stopwatch sw = new Stopwatch();
+
+            StlAssetPostProcessor.ResetTimingStats();
+            UrdfGeometryCollision.ResetCollisionTimingStats();
+
+            sw.Restart();
             ImportPipelineData im = ImportPipelineInit(filename, settings, false, true);
+            sw.Stop();
+            Debug.Log($"[URDF Timing] ImportPipelineInit (URDF XML parse): {sw.ElapsedMilliseconds}ms");
+
             if (im == null)
             {
                 return null;
             }
 
+            sw.Restart();
             ImportPipelineCreateObject(im);
+            sw.Stop();
+            Debug.Log($"[URDF Timing] ImportPipelineCreateObject: {sw.ElapsedMilliseconds}ms");
 
+            sw.Restart();
+            int linkCount = 0;
             while (ProcessJointStack(im))
-            {// process the stack until finished.
+            {
+                linkCount++;
             }
+            sw.Stop();
+            Debug.Log($"[URDF Timing] ProcessJointStack ({linkCount} links): {sw.ElapsedMilliseconds}ms");
 
+            StlAssetPostProcessor.LogTimingStats();
+            UrdfGeometryCollision.LogCollisionTimingStats();
+
+            sw.Restart();
             ImportPipelinePostCreate(im);
+            sw.Stop();
+            Debug.Log($"[URDF Timing] ImportPipelinePostCreate: {sw.ElapsedMilliseconds}ms");
 
             return im.robotGameObject;
         }

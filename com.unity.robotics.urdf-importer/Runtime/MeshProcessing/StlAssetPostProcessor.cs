@@ -13,8 +13,10 @@ limitations under the License.
 */ 
 
 using UnityEngine;
+using System.Diagnostics;
 using System.Linq;
 using System.IO;
+using Debug = UnityEngine.Debug;
 
 namespace Unity.Robotics.UrdfImporter
 {
@@ -27,6 +29,23 @@ namespace Unity.Robotics.UrdfImporter
     public class StlAssetPostProcessor
     {
         private static Material s_DefaultDiffuse = null;
+
+        // Timing stats
+        private static int s_stlCount = 0;
+        private static long s_totalParseMs = 0;
+        private static long s_totalGOMs = 0;
+
+        public static void ResetTimingStats()
+        {
+            s_stlCount = 0;
+            s_totalParseMs = 0;
+            s_totalGOMs = 0;
+        }
+
+        public static void LogTimingStats()
+        {
+            Debug.Log($"[URDF Timing] STL loads: {s_stlCount}, total parse time: {s_totalParseMs}ms, total GameObject creation time: {s_totalGOMs}ms");
+        }
 
         public static void PostprocessStlFile(string stlFile)
         {
@@ -116,16 +135,23 @@ namespace Unity.Robotics.UrdfImporter
         
         public static GameObject CreateStlGameObjectRuntime(string stlFile)
         {
+            Stopwatch sw = new Stopwatch();
+
+            sw.Restart();
             Mesh[] meshes = StlImporter.ImportMesh(stlFile);
+            sw.Stop();
+            long parseMs = sw.ElapsedMilliseconds;
+
             if (meshes == null)
             {
                 return null;
             }
-            
+
+            sw.Restart();
             GameObject parent = new GameObject(Path.GetFileNameWithoutExtension(stlFile));
 
             Material material = GetDefaultDiffuseMaterial();
-            
+
             for (int i = 0; i < meshes.Length; i++)
             {
                 GameObject gameObject = new GameObject(Path.GetFileNameWithoutExtension(GetMeshAssetPath(stlFile, i)));
@@ -133,6 +159,14 @@ namespace Unity.Robotics.UrdfImporter
                 gameObject.AddComponent<MeshRenderer>().sharedMaterial = material;
                 gameObject.transform.SetParent(parent.transform, false);
             }
+            sw.Stop();
+            long goMs = sw.ElapsedMilliseconds;
+
+            s_stlCount++;
+            s_totalParseMs += parseMs;
+            s_totalGOMs += goMs;
+            Debug.Log($"[URDF Timing] STL #{s_stlCount}: {Path.GetFileName(stlFile)} (parse: {parseMs}ms, GO: {goMs}ms, meshes: {meshes.Length})");
+
             return parent;
         }
 

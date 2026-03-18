@@ -14,8 +14,10 @@ limitations under the License.
 
 using UnityEngine;
 using System.Collections.Generic;
+using System.Diagnostics;
 using MeshProcess;
 using System.IO;
+using Debug = UnityEngine.Debug;
 
 namespace Unity.Robotics.UrdfImporter
 {
@@ -24,6 +26,26 @@ namespace Unity.Robotics.UrdfImporter
         public static List<string> UsedTemplateFiles => s_UsedTemplateFiles;
         static List<string> s_UsedTemplateFiles = new List<string>();
         static List<string> s_CreatedAssetNames = new List<string>();
+
+        // VHACD timing stats
+        private static int s_vhacdCount = 0;
+        private static long s_vhacdTotalMs = 0;
+        private static int s_collisionMeshCount = 0;
+        private static long s_collisionTotalMs = 0;
+
+        public static void ResetCollisionTimingStats()
+        {
+            s_vhacdCount = 0;
+            s_vhacdTotalMs = 0;
+            s_collisionMeshCount = 0;
+            s_collisionTotalMs = 0;
+        }
+
+        public static void LogCollisionTimingStats()
+        {
+            Debug.Log($"[URDF Timing] Collision meshes processed: {s_collisionMeshCount}, total collision time: {s_collisionTotalMs}ms");
+            Debug.Log($"[URDF Timing] VHACD decompositions: {s_vhacdCount}, total VHACD time: {s_vhacdTotalMs}ms");
+        }
         
         public static void Create(Transform parent, GeometryTypes geometryType, Link.Geometry geometry = null)
         {
@@ -174,6 +196,9 @@ namespace Unity.Robotics.UrdfImporter
 
         private static void ConvertMeshToColliders(GameObject gameObject, string location = null, bool setConvex = true)
         {
+            Stopwatch collisionSw = new Stopwatch();
+            collisionSw.Start();
+
             MeshFilter[] meshFilters = gameObject.GetComponentsInChildren<MeshFilter>();
             if (UrdfRobotExtensions.importsettings.convexMethod == ImportSettings.convexDecomposer.unity)
             {
@@ -202,10 +227,18 @@ namespace Unity.Robotics.UrdfImporter
                 }
 
                 foreach (MeshFilter meshFilter in meshFilters)
-                {                  
+                {
                     GameObject child = meshFilter.gameObject;
                     VHACD decomposer = child.AddComponent<VHACD>();
+
+                    Stopwatch vhacdSw = new Stopwatch();
+                    vhacdSw.Start();
                     List<Mesh> colliderMeshes = decomposer.GenerateConvexMeshes(meshFilter.sharedMesh);
+                    vhacdSw.Stop();
+                    s_vhacdCount++;
+                    s_vhacdTotalMs += vhacdSw.ElapsedMilliseconds;
+                    Debug.Log($"[URDF Timing] VHACD #{s_vhacdCount}: {child.name} ({meshFilter.sharedMesh.vertexCount} verts) -> {colliderMeshes.Count} hulls in {vhacdSw.ElapsedMilliseconds}ms");
+
                     foreach (Mesh collider in colliderMeshes)
                     {
                         var c = collider;
@@ -236,6 +269,10 @@ namespace Unity.Robotics.UrdfImporter
                     Object.DestroyImmediate(meshFilter);
                 }
             }
+
+            collisionSw.Stop();
+            s_collisionMeshCount++;
+            s_collisionTotalMs += collisionSw.ElapsedMilliseconds;
         }
 
         public static void BeginNewUrdfImport()

@@ -28,7 +28,10 @@ namespace Unity.Robotics.UrdfImporter
 
             collisionsObject.hideFlags = HideFlags.NotEditable;
             urdfCollisions.hideFlags = HideFlags.None;
-            
+            if (UrdfRobotExtensions.importsettings?.skipCollisionMeshes == true)
+            {
+                 collisions = null;
+            }
             if (collisions != null)
             {
                 foreach (Link.Collision collision in collisions)
