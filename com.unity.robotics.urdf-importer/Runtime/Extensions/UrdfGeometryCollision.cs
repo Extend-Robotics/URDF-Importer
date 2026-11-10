@@ -172,38 +172,10 @@ namespace Unity.Robotics.UrdfImporter
             collisionObject.transform.SetParentAndAlign(parent);
         }
 
-        private static bool s_VhacdUnavailableWarned = false;
-
-        /// <summary>
-        /// The native libvhacd plugin ships for Windows, Linux and macOS only. On any other platform
-        /// (e.g. Android) the VHACD P/Invoke throws DllNotFoundException, so fall back to Unity's
-        /// convex MeshCollider instead of aborting the robot import.
-        /// </summary>
-        private static bool IsVhacdAvailable()
-        {
-            switch (Application.platform)
-            {
-                case RuntimePlatform.WindowsEditor:
-                case RuntimePlatform.WindowsPlayer:
-                case RuntimePlatform.LinuxEditor:
-                case RuntimePlatform.LinuxPlayer:
-                case RuntimePlatform.OSXEditor:
-                case RuntimePlatform.OSXPlayer:
-                    return true;
-            }
-
-            if (!s_VhacdUnavailableWarned)
-            {
-                Debug.LogWarning($"VHACD is not available on {Application.platform}; using Unity convex mesh colliders instead.");
-                s_VhacdUnavailableWarned = true;
-            }
-            return false;
-        }
-
         private static void ConvertMeshToColliders(GameObject gameObject, string location = null, bool setConvex = true)
         {
             MeshFilter[] meshFilters = gameObject.GetComponentsInChildren<MeshFilter>();
-            if (UrdfRobotExtensions.importsettings.convexMethod == ImportSettings.convexDecomposer.unity || !IsVhacdAvailable())
+            if (UrdfRobotExtensions.importsettings.convexMethod == ImportSettings.convexDecomposer.unity)
             {
                 foreach (MeshFilter meshFilter in meshFilters)
                 {
